@@ -51,4 +51,5 @@ dependencies {
 	androidTestImplementation(libs.androidx.espresso.core)
 
 	implementation("org.maplibre.gl:android-sdk:11.6.0")
+	implementation("com.google.android.flexbox:flexbox:3.0.0")
 }

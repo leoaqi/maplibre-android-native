@@ -4,17 +4,23 @@ import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.content.res.AppCompatResources
 import com.example.testmaplibre.databinding.ActivityMainBinding
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.FillExtrusionLayer
+import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import java.io.IOException
 import java.nio.charset.Charset
@@ -22,6 +28,10 @@ import java.nio.charset.Charset
 class MainActivity : AppCompatActivity() {
 	private lateinit var binding: ActivityMainBinding
 	private lateinit var mapLibreMap: MapLibreMap
+
+	private var _selectTypeLayer = MutableStateFlow(TypeLayer.Fill)
+	private val state: StateFlow<TypeLayer> = _selectTypeLayer
+
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
@@ -32,11 +42,42 @@ class MainActivity : AppCompatActivity() {
 		setContentView(binding.root)
 
 		binding.mapView.onCreate(savedInstanceState)
-		settingMapLibre()
+		setupMap()
 
+		binding.btnLine.setOnClickListener {
+			_selectTypeLayer.value = TypeLayer.Line
+
+			changeLatLong(35.7289219489, 139.7640746734)
+			layerMap(mapLibreMap.style!!, TypeLayer.Line, "bunkyo")
+		}
+		binding.btnFill.setOnClickListener {
+			_selectTypeLayer.value = TypeLayer.Fill
+			changeLatLong(35.70725, 139.72825)
+			layerMap(mapLibreMap.style!!, TypeLayer.Fill, "chiba_fld")
+		}
+		binding.btnPark.setOnClickListener {
+			_selectTypeLayer.value = TypeLayer.Park
+			changeLatLong(35.705499694, 139.74964246)
+			layerMap(mapLibreMap.style!!, TypeLayer.Park, "park")
+		}
+		binding.btnLandmark.setOnClickListener {
+			_selectTypeLayer.value = TypeLayer.Landmark
+			changeLatLong(35.7035806436, 139.7471405047)
+			layerMap(mapLibreMap.style!!, TypeLayer.Landmark, "landmark")
+		}
+		binding.btnRailway.setOnClickListener {
+			_selectTypeLayer.value = TypeLayer.Railway
+			changeLatLong(35.705499694, 139.74964246)
+			layerMap(mapLibreMap.style!!, TypeLayer.Railway, "railway")
+		}
+		binding.btnEmergency.setOnClickListener {
+			_selectTypeLayer.value = TypeLayer.Emergency
+			changeLatLong(35.730824737, 139.741585443)
+			layerMap(mapLibreMap.style!!, TypeLayer.Emergency, "emergency")
+		}
 	}
 
-	private fun settingMapLibre() {
+	private fun setupMap() {
 		binding.mapView.getMapAsync { map ->
 			mapLibreMap = map
 			// 2d bright // 3d liberty
@@ -44,40 +85,164 @@ class MainActivity : AppCompatActivity() {
 				// show 3d building from asset geojson
 				add3DLayer(style)
 
-				// show line from asset geojson
-				addLineSource(style)
+				AppCompatResources.getDrawable(this, R.drawable.ic_park)?.let { drawable ->
+					style.addImage("ic_park", drawable)
+				}
+				AppCompatResources.getDrawable(this, R.drawable.ic_landmark)?.let { drawable ->
+					style.addImage("ic_landmark", drawable)
+				}
+
+				layerMap(style, state.value, "chiba_fld")
 			}
 			map.cameraPosition =
 				CameraPosition.Builder()
-					.target(LatLng(35.71509523455584, 139.8498240030706))
+					.target(LatLng(35.70725, 139.72825))
 					.zoom(15.0).build()
 		}
 	}
 
-	private fun addLineSource(style: Style) {
+	private fun changeLatLong(
+		latitude: Double,
+		longitude: Double,
+	) {
+		mapLibreMap.cameraPosition =
+			CameraPosition.Builder()
+				.target(LatLng(latitude, longitude))
+				.zoom(15.0).build()
+	}
+
+	private fun createGeoJsonSource(style: Style, id:String, geoJsonString:  String): String{
+		val geoJsonSource = GeoJsonSource("$id-source", geoJsonString)
+		style.addSource(geoJsonSource)
+		return "$id-source"
+	}
+
+	private fun layerMap(style: Style, type: TypeLayer, geoJsonName: String) {
+		Log.d("TAG", "layerMap type: ${type.name.lowercase()}")
 		try {
 			// Read GeoJSON from assets
-			val geoJsonString = loadGeoJsonFromAsset("tran.geojson")
+			val layers = style.layers.toList()
+
+			Log.d("TAG", "layerMap layers: ${layers.size}")
+
+			for (layer in layers) {
+
+				Log.d(
+					"TAG", "layerMap layers: ${
+						layer.let {
+							it.id
+						}
+					}"
+				)
+			}
+
+			for (typeLayer in TypeLayer.values()){
+				style.removeLayer("${typeLayer.name.lowercase()}-layer")
+				style.removeSource("${typeLayer.name.lowercase()}-source")
+			}
+
+			val geoJsonString = loadGeoJsonFromAsset("$geoJsonName.geojson")
 
 			// Create GeoJSON source
-			val geoJsonSource = GeoJsonSource("route-source", geoJsonString)
-			style.addSource(geoJsonSource)
+			val sourceId = createGeoJsonSource(style, type.name.lowercase(), geoJsonString)
 
 			// Create a line layer to render the LineString
-			val lineLayer = LineLayer("route-layer", "route-source")
+			when (type) {
+				TypeLayer.Fill -> {
+					val fillLayer = FillLayer("${type.name.lowercase()}-layer", sourceId)
 
-			// Style the line with more explicit properties
-			lineLayer.setProperties(
-				// Ensure line is visible
-				PropertyFactory.lineColor(android.graphics.Color.RED),
-				PropertyFactory.lineWidth(5f),
-				PropertyFactory.lineOpacity(1f),
-				PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-				PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-			)
+					// Style the line with more explicit properties
+					fillLayer.setProperties(
+						// Ensure line is visible
+						PropertyFactory.fillColor(Color.RED),
+						PropertyFactory.fillOpacity(0.7f),
+					)
 
-			// Add the layer to the map
-			style.addLayer(lineLayer)
+					// Add the layer to the map
+
+					style.addLayerAbove(fillLayer, "background")
+				}
+
+				TypeLayer.Line -> {
+					val lineLayer = LineLayer("${type.name.lowercase()}-layer", sourceId)
+
+					// Style the line with more explicit properties
+					lineLayer.setProperties(
+						// Ensure line is visible
+						PropertyFactory.lineColor(android.graphics.Color.RED),
+						PropertyFactory.lineWidth(5f),
+						PropertyFactory.lineOpacity(1f),
+						PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+						PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+					)
+
+					// Add the layer to the map
+					style.addLayer(lineLayer)
+				}
+				TypeLayer.Railway -> {
+					val lineLayer = LineLayer("${type.name.lowercase()}-layer", sourceId)
+
+					// Style the line with more explicit properties
+					lineLayer.setProperties(
+						// Ensure line is visible
+						PropertyFactory.lineColor(android.graphics.Color.RED),
+						PropertyFactory.lineWidth(5f),
+						PropertyFactory.lineOpacity(1f),
+						PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+						PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+					)
+
+					// Add the layer to the map
+					style.addLayer(lineLayer)
+				}
+
+				TypeLayer.Park -> {
+					val markerLayer = SymbolLayer("${type.name.lowercase()}-layer", sourceId)
+						.withProperties(
+							PropertyFactory.iconImage("ic_park"),
+							PropertyFactory.iconAllowOverlap(true),
+							PropertyFactory.iconSize(1.0f),
+							// Optional: Add text labels
+							PropertyFactory.textField(Expression.get("公園名")),
+							PropertyFactory.textOffset(arrayOf(0f, 1.5f)),
+							PropertyFactory.textAnchor("top")
+						)
+
+					style.addLayer(markerLayer)
+				}
+				TypeLayer.Landmark -> {
+					val markerLayer = SymbolLayer("${type.name.lowercase()}-layer", sourceId)
+						.withProperties(
+							PropertyFactory.iconImage("ic_landmark"),
+							PropertyFactory.iconAllowOverlap(true),
+							PropertyFactory.iconSize(1.0f),
+							// Optional: Add text labels
+							PropertyFactory.textField(Expression.get("名称")),
+							PropertyFactory.textOffset(arrayOf(0f, 1.5f)),
+							PropertyFactory.textAnchor("top")
+						)
+
+					style.addLayer(markerLayer)
+				}
+
+				TypeLayer.Emergency -> {
+					val lineLayer = LineLayer("${type.name.lowercase()}-layer", sourceId)
+
+					// Style the line with more explicit properties
+					lineLayer.setProperties(
+						// Ensure line is visible
+						PropertyFactory.lineColor(android.graphics.Color.RED),
+						PropertyFactory.lineWidth(5f),
+						PropertyFactory.lineOpacity(1f),
+						PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+						PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+					)
+
+					// Add the layer to the map
+					style.addLayer(lineLayer)
+				}
+			}
+
 
 		} catch (e: Exception) {
 			Log.e("GeoJSON", "Error loading GeoJSON", e)
@@ -189,4 +354,8 @@ class MainActivity : AppCompatActivity() {
 		super.onSaveInstanceState(outState)
 		binding.mapView.onSaveInstanceState(outState)
 	}
+}
+
+enum class TypeLayer {
+	Line, Fill, Park, Railway, Landmark, Emergency
 }
